@@ -11,7 +11,17 @@
 
       <el-space direction="vertical" :size="20" style="width: 100%">
         <div>
-          <h4>1. 导出总表 Excel</h4>
+          <h4>1. 导出完整监考表（学校格式）</h4>
+          <p style="color: #909399; font-size: 14px">按考试时间分组，展示每个考场的所有监考教师，适合打印张贴</p>
+          <el-button type="primary" @click="exportFullSchedule">
+            <el-icon><Download /></el-icon>导出完整监考表 Excel
+          </el-button>
+        </div>
+
+        <el-divider />
+
+        <div>
+          <h4>2. 导出总表 Excel</h4>
           <p style="color: #909399; font-size: 14px">包含所有考场的监考安排，可打印分发</p>
           <el-button type="primary" @click="exportExcel">
             <el-icon><Download /></el-icon>导出 Excel 总表
@@ -21,7 +31,7 @@
         <el-divider />
 
         <div>
-          <h4>2. 生成教师查询数据</h4>
+          <h4>3. 生成教师查询数据</h4>
           <p style="color: #909399; font-size: 14px">
             生成 JSON 数据文件，教师可在查询页面输入姓名查看自己的监考安排
           </p>
@@ -36,7 +46,7 @@
         <el-divider />
 
         <div>
-          <h4>3. 数据预览</h4>
+          <h4>4. 数据预览</h4>
           <el-table :data="previewData" stripe max-height="400">
             <el-table-column prop="teacherName" label="教师" width="100" />
             <el-table-column prop="subject" label="科目" width="80" />
@@ -74,6 +84,41 @@ const examStore = useExamStore()
 const allocationStore = useAllocationStore()
 
 const dataFileContent = ref('')
+
+const scheduleSlots = computed(() => {
+  const slots = {}
+  
+  for (const alloc of allocationStore.allocations) {
+    const exam = examStore.exams.find(e => e.id === alloc.examId)
+    const room = roomStore.rooms.find(r => r.id === alloc.roomId)
+    if (!exam || !room) continue
+    
+    const key = `${exam.date}|${exam.timeSlot}`
+    if (!slots[key]) {
+      slots[key] = {
+        date: exam.date,
+        timeSlot: exam.timeSlot,
+        subject: exam.subject,
+        assignments: []
+      }
+    }
+    
+    const teacherNames = alloc.teacherIds.map(id => 
+      teacherStore.teachers.find(t => t.id === id)?.name || '未知'
+    ).join('、')
+    
+    slots[key].assignments.push({
+      roomName: room.name,
+      location: room.location,
+      teachers: teacherNames
+    })
+  }
+  
+  return Object.values(slots).sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date)
+    return a.timeSlot.localeCompare(b.timeSlot)
+  })
+})
 
 const previewData = computed(() => {
   const data = []
@@ -146,6 +191,39 @@ function exportExcel() {
   
   XLSX.writeFile(wb, `监考安排_${new Date().toISOString().slice(0, 10)}.xlsx`)
   ElMessage.success('导出成功')
+}
+
+function exportFullSchedule() {
+  if (!scheduleSlots.value.length) {
+    ElMessage.warning('暂无监考安排数据')
+    return
+  }
+  
+  const wb = XLSX.utils.book_new()
+  
+  scheduleSlots.value.forEach(slot => {
+    const rows = []
+    
+    slot.assignments.forEach((a, idx) => {
+      rows.push({
+        '序号': idx + 1,
+        '考场': a.roomName,
+        '位置': a.location || '',
+        '监考教师': a.teachers
+      })
+    })
+    
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 12 }, { wch: 15 }, { wch: 30 }
+    ]
+    
+    const sheetName = `${slot.date}_${slot.timeSlot}`.slice(0, 31)
+    XLSX.utils.book_append_sheet(wb, ws, sheetName)
+  })
+  
+  XLSX.writeFile(wb, `完整监考表_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  ElMessage.success(`已导出 ${scheduleSlots.value.length} 个时间段的监考安排`)
 }
 
 function generateDataFile() {
