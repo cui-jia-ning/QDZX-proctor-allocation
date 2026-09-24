@@ -23,51 +23,73 @@
       </div>
 
       <div v-else class="query-section">
-        <el-input
-          v-model="searchQuery"
-          placeholder="输入姓名查询"
-          size="large"
-          clearable
-          @input="handleSearch"
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-        </el-input>
+        <el-tabs v-model="activeTab" type="card">
+          <el-tab-pane label="个人查询" name="personal">
+            <el-input
+              v-model="searchQuery"
+              placeholder="输入姓名查询"
+              size="large"
+              clearable
+              @input="handleSearch"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
 
-        <div v-if="searchResults.length" class="results">
-          <div 
-            v-for="teacher in searchResults" 
-            :key="teacher.id" 
-            class="result-card"
-          >
-            <div class="teacher-info">
-              <span class="name">{{ teacher.name }}</span>
-              <span class="subject">{{ teacher.subject }}</span>
-            </div>
-            
-            <div v-if="teacher.assignments.length" class="assignments">
+            <div v-if="searchResults.length" class="results">
               <div 
-                v-for="(a, i) in teacher.assignments" 
-                :key="i" 
-                class="assignment-item"
+                v-for="teacher in searchResults" 
+                :key="teacher.id" 
+                class="result-card"
               >
-                <div class="time">{{ a.date }} {{ a.timeSlot }}</div>
-                <div class="detail">
-                  <span class="subject-tag">{{ a.examSubject }}</span>
-                  <span>{{ a.roomName }}</span>
+                <div class="teacher-info">
+                  <span class="name">{{ teacher.name }}</span>
+                  <span class="subject">{{ teacher.subject }}</span>
+                </div>
+                
+                <div v-if="teacher.assignments.length" class="assignments">
+                  <div 
+                    v-for="(a, i) in teacher.assignments" 
+                    :key="i" 
+                    class="assignment-item"
+                  >
+                    <div class="time">{{ a.date }} {{ a.timeSlot }}</div>
+                    <div class="detail">
+                      <span class="subject-tag">{{ a.examSubject }}</span>
+                      <span>{{ a.roomName }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="no-assignment">
+                  暂无监考安排
                 </div>
               </div>
             </div>
-            <div v-else class="no-assignment">
-              暂无监考安排
-            </div>
-          </div>
-        </div>
 
-        <div v-else-if="searchQuery" class="no-results">
-          未找到匹配的教师
-        </div>
+            <div v-else-if="searchQuery" class="no-results">
+              未找到匹配的教师
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane label="完整监考表" name="full">
+            <div class="full-schedule">
+              <div v-for="slot in scheduleSlots" :key="slot.key" class="schedule-slot">
+                <div class="slot-header">
+                  <span class="slot-time">{{ slot.date }} {{ slot.timeSlot }}</span>
+                  <span class="slot-subject">{{ slot.subject }}</span>
+                </div>
+                <el-table :data="slot.assignments" stripe size="small" style="width: 100%">
+                  <el-table-column prop="roomName" label="考场" width="120" />
+                  <el-table-column prop="teacherNames" label="监考教师" />
+                </el-table>
+              </div>
+              <div v-if="!scheduleSlots.length" class="no-results">
+                暂无监考安排数据
+              </div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
 
         <div class="reload">
           <el-button type="primary" link @click="resetData">
@@ -85,12 +107,44 @@ import { ref, computed } from 'vue'
 const dataLoaded = ref(false)
 const teacherData = ref([])
 const searchQuery = ref('')
+const activeTab = ref('personal')
 
 const searchResults = computed(() => {
   if (!searchQuery.value) return []
   return teacherData.value.filter(t => 
     t.name.includes(searchQuery.value)
   )
+})
+
+const scheduleSlots = computed(() => {
+  const slots = {}
+  teacherData.value.forEach(teacher => {
+    teacher.assignments.forEach(a => {
+      const key = `${a.date}|${a.timeSlot}`
+      if (!slots[key]) {
+        slots[key] = {
+          key,
+          date: a.date,
+          timeSlot: a.timeSlot,
+          subject: a.examSubject,
+          assignments: []
+        }
+      }
+      const existing = slots[key].assignments.find(s => s.roomName === a.roomName)
+      if (existing) {
+        existing.teacherNames += '、' + teacher.name
+      } else {
+        slots[key].assignments.push({
+          roomName: a.roomName,
+          teacherNames: teacher.name
+        })
+      }
+    })
+  })
+  return Object.values(slots).sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date)
+    return a.timeSlot.localeCompare(b.timeSlot)
+  })
 })
 
 function handleFileLoad(file) {
@@ -239,6 +293,37 @@ function resetData() {
   color: #909399;
   padding: 40px 0;
   font-size: 16px;
+}
+
+.full-schedule {
+  margin-top: 16px;
+}
+
+.schedule-slot {
+  margin-bottom: 24px;
+}
+
+.slot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.slot-time {
+  font-weight: bold;
+  color: #303133;
+}
+
+.slot-subject {
+  background: #409eff;
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 13px;
 }
 
 .reload {
